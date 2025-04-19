@@ -7,21 +7,29 @@ function DocumentUploader() {
   const [query, setQuery] = useState('');
   const [queryResult, setQueryResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null); // Add error state
 
   const handleFileChange = (e) => setFile(e.target.files[0]);
 
   const handleSubmit = async () => {
-    if (!file) return;
+    if (!file) {
+      setError('Please select a file');
+      return;
+    }
     setLoading(true);
+    setError(null);
     const formData = new FormData();
     formData.append('file', file);
     try {
+      console.log('Uploading file:', file.name, file.type, file.size); // Log file details
       const response = await axios.post('http://localhost:8000/process_document', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setResult(response.data);
     } catch (error) {
       console.error('Error processing document:', error);
+      const errorMessage = error.response?.data?.detail || 'Unknown error occurred';
+      setError(`Failed to process document: ${errorMessage}`);
     }
     setLoading(false);
   };
@@ -33,6 +41,7 @@ function DocumentUploader() {
       setQueryResult(response.data.results);
     } catch (error) {
       console.error('Error querying document:', error);
+      setError(`Failed to query document: ${error.message}`);
     }
   };
 
@@ -42,6 +51,12 @@ function DocumentUploader() {
       <button onClick={handleSubmit} disabled={loading}>
         {loading ? 'Processing...' : 'Process Document'}
       </button>
+
+      {error && (
+        <div style={{ color: 'red', marginTop: '10px' }}>
+          <strong>Error:</strong> {error}
+        </div>
+      )}
 
       {result && (
         <div>

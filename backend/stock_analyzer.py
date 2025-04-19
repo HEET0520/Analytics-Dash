@@ -1,5 +1,5 @@
 from alpha_vantage.timeseries import TimeSeries
-from transformers import pipeline
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 import pymc as pm
 import numpy as np
@@ -13,26 +13,54 @@ HF_TOKEN = os.getenv("HF_TOKEN")
 ALPHA_VANTAGE_KEY = os.getenv("ALPHA_VANTAGE_KEY")
 
 if not HF_TOKEN:
-    raise ValueError("HF_TOKEN is not set in environment or .env file")
+    raise ValueError("HF_TOKEN not set. Get one from https://huggingface.co/settings/tokens")
+if not ALPHA_VANTAGE_KEY:
+    raise ValueError("ALPHA_VANTAGE_KEY not set. Get one from https://www.alphavantage.co/support/#api-key")
+
 print(f"Using HF_TOKEN: {HF_TOKEN[:5]}...")  # Debug: Masked token
-print(f"Attempting to load model: mistralai/Mistral-7B-Instruct-v0.3")  # Debug
+print(f"Attempting to load model: google/flan-t5-small")  # Debug: Smaller model for CPU
+
+# Set optimization parameters for Intel CPU
+os.environ["OMP_NUM_THREADS"] = "4"  # Limit parallel threads for i5
+os.environ["KMP_BLOCKTIME"] = "0"
+os.environ["KMP_SETTINGS"] = "1"
 
 # Initialize Alpha Vantage
 ts = TimeSeries(key=ALPHA_VANTAGE_KEY, output_format="pandas")
 
-# Initialize Hugging Face pipeline
+# Initialize model with CPU optimizations
 try:
-    stock_analyzer = pipeline(
-        "text-generation",
-        model="mistralai/Mistral-7B-Instruct-v0.3",
-        device_map="auto",
-        torch_dtype=torch.bfloat16,
-        token=HF_TOKEN,  # Use 'token' instead of 'use_auth_token'
+    tokenizer = AutoTokenizer.from_pretrained("google/flan-t5-small", token=HF_TOKEN)
+    model = AutoModelForSeq2SeqLM.from_pretrained(
+        "google/flan-t5-small", 
+        device_map="cpu",  # Force CPU
+        low_cpu_mem_usage=True,  # Optimize for low memory
+        token=HF_TOKEN
     )
     print("Model loaded successfully!")
 except Exception as e:
     print(f"Failed to load model: {e}")
     raise
+
+def analyze_text(prompt, max_length=500):
+    """
+    Generate text analysis with FLAN-T5 small model.
+    """
+    # Prepare inputs (truncate if needed for 8GB RAM)
+    inputs = tokenizer(prompt[:1000], return_tensors="pt", truncation=True, max_length=512)
+    
+    # Generate with conservative parameters for CPU
+    with torch.no_grad():
+        outputs = model.generate(
+            inputs["input_ids"],
+            max_length=max_length,
+            num_return_sequences=1,
+            do_sample=False,  # Deterministic for faster CPU performance
+            early_stopping=True
+        )
+    
+    # Decode and return
+    return tokenizer.decode(outputs[0], skip_special_tokens=True)
 
 def fetch_stock_data(ticker):
     """
@@ -64,11 +92,10 @@ def analyze_stock(ticker, document_text=""):
         f"Analyze the stock {ticker} based on the following:\n"
         f"Recent 30-day closing prices: {stock_prices}\n"
         f"Market context: {market_context}\n"
-        f"Document content (if any): {document_text}\n"
+        f"Document content (if any): {document_text[:300]}\n"  # Limit document text length
         "Identify 2 trends, 2 risks, and 1 investment opportunity."
     )
-    result = stock_analyzer(prompt, max_length=500, num_return_sequences=1)
-    analysis = result[0]["generated_text"]
+    analysis = analyze_text(prompt, max_length=500)
     confidence = calculate_confidence(stock_prices)
     return {
         "ticker": ticker,
@@ -87,9 +114,13 @@ def calculate_confidence(prices):
     """
     if isinstance(prices, str):  # Error case
         return 0.0
+    
+    # Use a simpler model with fewer samples for CPU efficiency
     with pm.Model() as model:
         mu = pm.Normal("mu", mu=np.mean(prices), sigma=np.std(prices))
         sigma = pm.HalfNormal("sigma", sigma=10)
         pm.Normal("obs", mu=mu, sigma=sigma, observed=prices)
-        trace = pm.sample(1000, tune=500, return_inferencedata=False)
+        # Reduce samples for faster processing on CPU
+        trace = pm.sample(500, tune=200, chains=2, return_inferencedata=False)
+    
     return float(np.mean(trace["mu"]) / np.max(prices))

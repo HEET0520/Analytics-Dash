@@ -1,22 +1,32 @@
 version: '3.8'
+
 services:
   backend:
     build:
       context: .
-      dockerfile: docker/Dockerfile.backend
+      dockerfile: docker/Dockerfile.backend    # <<--- This matches your structure
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    env_file:
+      - .env
+    depends_on:
+      - redis
+
   frontend:
     build:
-      context: .
-      dockerfile: docker/Dockerfile.frontend
+      context: ./frontend
+      dockerfile: ../docker/Dockerfile.frontend   # <<--- Also matches your structure
     ports:
       - "3000:3000"
     volumes:
       - ./frontend:/app
+    depends_on:
+      - backend
+      - redis
+
   redis:
-    image: redis:latest
+    image: redis:alpine
     ports:
       - "6379:6379"
