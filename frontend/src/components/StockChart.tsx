@@ -1,176 +1,135 @@
 import React, { useEffect, useState } from 'react';
 import {
-  LineChart,
-  Line,
-  BarChart,
-  Bar,
+  ResponsiveContainer,
+  CartesianGrid,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
+  Line,
   Area,
   ComposedChart,
+  BarChart,
+  Bar,
 } from 'recharts';
 
-interface StockChartProps {
-  symbol: string;
-  timeRange: string;
-  chartType: string;
-}
+const FINNHUB_API_KEY = 'd0392ppr01qvvb92vm80d0392ppr01qvvb92vm8g';
 
-// Mock data generator - will be replaced with Alpha Vantage API
-const generateMockData = (timeRange: string) => {
-  const data = [];
-  const now = new Date();
-  let startDate: Date;
-  let interval: number;
-  let format: string;
-  let dataPoints: number;
+const fetchChartData = async (symbol: string, timeRange: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y') => {
+  const resolutionMap = {
+    '1D': '1',
+    '1W': '60',
+    '1M': 'D',
+    '3M': 'D',
+    '6M': 'W',
+    '1Y': 'W',
+    '5Y': 'M',
+  };
+
+  const resolution = resolutionMap[timeRange];
+  const now = Math.floor(Date.now() / 1000);
+  let from, to;
 
   switch (timeRange) {
     case '1D':
-      startDate = new Date(now);
-      startDate.setHours(9, 30, 0, 0);
-      interval = 5; // 5 minutes
-      format = 'HH:mm';
-      dataPoints = 78; // 6.5 hours / 5 minutes
+      from = now - 86400; // 1 day in seconds
+      to = now;
       break;
     case '1W':
-      startDate = new Date(now);
-      startDate.setDate(now.getDate() - 7);
-      interval = 1; // 1 day
-      format = 'MM/dd';
-      dataPoints = 7;
+      from = now - 7 * 86400;
+      to = now;
       break;
     case '1M':
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 1);
-      interval = 1; // 1 day
-      format = 'MM/dd';
-      dataPoints = 30;
+      from = now - 30 * 86400;
+      to = now;
       break;
     case '3M':
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 3);
-      interval = 3; // 3 days
-      format = 'MM/dd';
-      dataPoints = 30;
+      from = now - 90 * 86400;
+      to = now;
       break;
     case '6M':
-      startDate = new Date(now);
-      startDate.setMonth(now.getMonth() - 6);
-      interval = 7; // 1 week
-      format = 'MM/dd';
-      dataPoints = 26;
+      from = now - 182 * 86400;
+      to = now;
       break;
     case '1Y':
-      startDate = new Date(now);
-      startDate.setFullYear(now.getFullYear() - 1);
-      interval = 14; // 2 weeks
-      format = 'MM/dd';
-      dataPoints = 26;
+      from = now - 365 * 86400;
+      to = now;
       break;
     case '5Y':
-      startDate = new Date(now);
-      startDate.setFullYear(now.getFullYear() - 5);
-      interval = 60; // 2 months
-      format = 'MM/yyyy';
-      dataPoints = 30;
+      from = now - 5 * 365 * 86400;
+      to = now;
       break;
-    default: // MAX
-      startDate = new Date(now);
-      startDate.setFullYear(now.getFullYear() - 10);
-      interval = 120; // 4 months
-      format = 'MM/yyyy';
-      dataPoints = 30;
-      break;
+    default:
+      from = now - 10 * 365 * 86400;
+      to = now;
   }
 
-  let baseValue = 150 + Math.random() * 50;
-  let volatility = 0.02;
+  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
+  const response = await fetch(url);
+  const data = await response.json();
 
-  for (let i = 0; i < dataPoints; i++) {
-    const date = new Date(startDate);
-    if (timeRange === '1D') {
-      date.setMinutes(date.getMinutes() + interval * i);
-      if (date.getHours() >= 16) break; // Market closes at 4 PM
-    } else {
-      date.setDate(date.getDate() + interval * i);
-    }
-
-    // Generate random price movement with some trend
-    const change = (Math.random() - 0.5) * volatility * baseValue;
-    if (i > 0) {
-      baseValue = data[i - 1].close + change;
-    }
-
-    const open = baseValue;
-    const close = baseValue + (Math.random() - 0.5) * volatility * baseValue;
-    const high = Math.max(open, close) + Math.random() * volatility * baseValue;
-    const low = Math.min(open, close) - Math.random() * volatility * baseValue;
-    const volume = Math.floor(100000 + Math.random() * 900000);
-
-    data.push({
-      date: date.toLocaleDateString(),
-      time: timeRange === '1D' ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '',
-      open: parseFloat(open.toFixed(2)),
-      close: parseFloat(close.toFixed(2)),
-      high: parseFloat(high.toFixed(2)),
-      low: parseFloat(low.toFixed(2)),
-      volume,
-    });
+  if (data.s === 'ok') {
+    return data.t.map((time: number, index: number) => ({
+      date: new Date(time * 1000).toLocaleDateString(),
+      open: data.o[index],
+      high: data.h[index],
+      low: data.l[index],
+      close: data.c[index],
+      volume: data.v[index],
+    }));
   }
-
-  return data;
+  return [];
 };
 
-const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType }) => {
+interface StockChartProps {
+  symbol: string;
+  timeRange: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y';
+  chartType: string;
+}
+
+const StockChart = ({ symbol, timeRange, chartType }: StockChartProps): JSX.Element => {
   const [data, setData] = useState<any[]>([]);
 
   useEffect(() => {
-    // This would be replaced with an actual API call to Alpha Vantage
-    const mockData = generateMockData(timeRange);
-    setData(mockData);
+    const fetchData = async () => {
+      const chartData = await fetchChartData(symbol, timeRange);
+      setData(chartData);
+    };
+
+    fetchData();
   }, [symbol, timeRange]);
 
-  const formatXAxis = (tickItem: string) => {
-    if (timeRange === '1D') {
-      return tickItem; // Already formatted as time
-    }
-    
-    // For other time ranges, format as date
-    const date = new Date(tickItem);
-    if (timeRange === '5Y' || timeRange === 'MAX') {
-      return date.toLocaleDateString(undefined, { month: 'short', year: '2-digit' });
-    }
-    return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const formatXAxis = (tick: string) => {
+    const date = new Date(tick);
+    return timeRange === '1D'
+      ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
   const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-gray-800 border border-gray-700 p-3 rounded shadow-lg">
-          <p className="font-medium text-white">{timeRange === '1D' ? `${label}` : new Date(label).toLocaleDateString()}</p>
-          {chartType === 'candle' ? (
-            <>
-              <p className="text-gray-300">Open: <span className="text-white">${payload[0].payload.open.toFixed(2)}</span></p>
-              <p className="text-gray-300">Close: <span className="text-white">${payload[0].payload.close.toFixed(2)}</span></p>
-              <p className="text-gray-300">High: <span className="text-white">${payload[0].payload.high.toFixed(2)}</span></p>
-              <p className="text-gray-300">Low: <span className="text-white">${payload[0].payload.low.toFixed(2)}</span></p>
-            </>
-          ) : (
-            <p className="text-gray-300">Price: <span className="text-white">${payload[0].value.toFixed(2)}</span></p>
-          )}
-          <p className="text-gray-300">Volume: <span className="text-white">{payload[0].payload.volume.toLocaleString()}</span></p>
-        </div>
-      );
-    }
-    return null;
+    if (!active || !payload?.length) return null;
+    const entry = payload[0].payload;
+
+    return (
+      <div className="bg-gray-800 border border-gray-700 p-3 rounded shadow-lg">
+        <p className="font-medium text-white">{label}</p>
+        {chartType === 'candle' ? (
+          <>
+            <p className="text-gray-300">Open: <span className="text-white">${entry.open.toFixed(2)}</span></p>
+            <p className="text-gray-300">Close: <span className="text-white">${entry.close.toFixed(2)}</span></p>
+            <p className="text-gray-300">High: <span className="text-white">${entry.high.toFixed(2)}</span></p>
+            <p className="text-gray-300">Low: <span className="text-white">${entry.low.toFixed(2)}</span></p>
+          </>
+        ) : (
+          <p className="text-gray-300">Price: <span className="text-white">${entry.close.toFixed(2)}</span></p>
+        )}
+        <p className="text-gray-300">Volume: <span className="text-white">{entry.volume.toLocaleString()}</span></p>
+      </div>
+    );
   };
 
   const renderChart = () => {
+    if (!data.length) return <div className="text-gray-400 text-center py-10">No data available</div>;
+
     switch (chartType) {
       case 'line':
         return (
@@ -195,7 +154,7 @@ const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType })
                 stroke="#9ca3af"
                 tick={{ fill: '#9ca3af' }}
                 axisLine={{ stroke: '#4b5563' }}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `$${value.toFixed(2)}`}
               />
               <Tooltip content={<CustomTooltip />} />
               <Area
@@ -235,7 +194,7 @@ const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType })
                 stroke="#9ca3af"
                 tick={{ fill: '#9ca3af' }}
                 axisLine={{ stroke: '#4b5563' }}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `$${value.toFixed(2)}`}
               />
               <Tooltip content={<CustomTooltip />} />
               <Bar
@@ -264,12 +223,11 @@ const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType })
                 stroke="#9ca3af"
                 tick={{ fill: '#9ca3af' }}
                 axisLine={{ stroke: '#4b5563' }}
-                tickFormatter={(value) => `$${value}`}
+                tickFormatter={(value) => `$${value.toFixed(2)}`}
               />
               <Tooltip content={<CustomTooltip />} />
               {data.map((entry, index) => (
                 <React.Fragment key={index}>
-                  {/* High-Low line */}
                   <Line
                     dataKey="high"
                     stroke={entry.close >= entry.open ? '#10b981' : '#ef4444'}
@@ -284,9 +242,8 @@ const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType })
                     activeDot={false}
                     isAnimationActive={false}
                   />
-                  {/* Candle body */}
                   <Bar
-                    dataKey={entry.close >= entry.open ? 'close' : 'open'}
+                    dataKey={entry.close >= entry.open ? 'open' : 'close'} // Adjusted for candlestick
                     fill={entry.close >= entry.open ? '#10b981' : '#ef4444'}
                     stroke={entry.close >= entry.open ? '#10b981' : '#ef4444'}
                     barSize={timeRange === '1D' ? 5 : timeRange === '1W' ? 15 : 20}
@@ -301,11 +258,7 @@ const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType })
     }
   };
 
-  return (
-    <div className="h-full w-full">
-      {renderChart()}
-    </div>
-  );
+  return <div className="h-full w-full">{renderChart()}</div>;
 };
 
 export default StockChart;
