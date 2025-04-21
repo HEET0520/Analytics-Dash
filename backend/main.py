@@ -205,9 +205,36 @@ def analyze_report(text, graph_text=None):
 
     # Clean up temporary file
     try:
+<<<<<<< HEAD
         os.unlink(index_path)
     except:
         pass
+=======
+        logger.info("Reading file content")
+        file_content = await file.read()
+        logger.info(f"File content read, size: {len(file_content)} bytes")
+        
+        logger.info(f"Running OCR on file: {file.filename}")
+        # Pass the content type to enhanced_ocr
+        extracted_text = enhanced_ocr(file_content, file.content_type)
+        logger.info(f"OCR completed, extracted text length: {len(extracted_text)}")
+        
+        logger.info("Setting up vector database")
+        vector_db = setup_vector_db([extracted_text])
+        logger.info("Vector database setup completed")
+        
+        logger.info("Generating insights")
+        insights = generate_insights(extracted_text)
+        logger.info("Insights generated")
+        
+        logger.info("Getting market context")
+        market_context = get_market_context()
+        logger.info("Market context retrieved")
+        
+        logger.info("Querying RAG system")
+        rag_results = query_rag("What are the key points?", vector_db)
+        logger.info("RAG query completed")
+>>>>>>> ce582adbd1347524dc9859423cf73c65c0b3d4c0
 
     return analysis_result, metrics
 
@@ -302,6 +329,7 @@ async def analyze_document_sync(file: UploadFile = File(...)):
         financial_metrics=metrics
     )
 
+<<<<<<< HEAD
 @app.get("/task/{task_id}")
 async def get_task_status(task_id: str):
     """
@@ -323,12 +351,27 @@ async def get_task_status(task_id: str):
             "analysis_results": task_info["analysis_results"],
             "financial_metrics": task_info["financial_metrics"]
         }
+=======
+    try:
+        document_text = ""
+        if file:
+            file_content = await file.read()
+            # Pass the content type to enhanced_ocr
+            document_text = enhanced_ocr(file_content, file.content_type)
+>>>>>>> ce582adbd1347524dc9859423cf73c65c0b3d4c0
 
 # Health check endpoint
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
 
+<<<<<<< HEAD
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+=======
+@app.get("/healthcheck")
+async def healthcheck():
+    """Simple endpoint to check if the API is running"""
+    return {"status": "ok", "redis": redis_available}
+>>>>>>> ce582adbd1347524dc9859423cf73c65c0b3d4c0
