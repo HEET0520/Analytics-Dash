@@ -58,7 +58,8 @@ async def process_document(file: UploadFile = File(...)):
         logger.info(f"File content read, size: {len(file_content)} bytes")
         
         logger.info(f"Running OCR on file: {file.filename}")
-        extracted_text = enhanced_ocr(file_content)
+        # Pass the content type to enhanced_ocr
+        extracted_text = enhanced_ocr(file_content, file.content_type)
         logger.info(f"OCR completed, extracted text length: {len(extracted_text)}")
         
         logger.info("Setting up vector database")
@@ -130,7 +131,8 @@ async def analyze_stock_endpoint(ticker: str, file: UploadFile = None):
         document_text = ""
         if file:
             file_content = await file.read()
-            document_text = enhanced_ocr(file_content)
+            # Pass the content type to enhanced_ocr
+            document_text = enhanced_ocr(file_content, file.content_type)
 
         result = analyze_stock(ticker, document_text)
         

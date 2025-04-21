@@ -7,6 +7,15 @@ from textblob import TextBlob
 import re
 from dotenv import load_dotenv
 import os
+import logging
+import fitz  # PyMuPDF for PDF handling
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
@@ -14,17 +23,56 @@ load_dotenv()
 # Initialize EasyOCR reader with optimized settings
 reader = easyocr.Reader(['en'], gpu=False)
 
-def preprocess_image(file_content):
+def extract_images_from_pdf(file_content):
+    """
+    Extract images from PDF pages.
+    Args:
+        file_content (bytes): Binary content of the uploaded PDF file.
+    Returns:
+        list: List of image arrays extracted from PDF pages
+    """
+    try:
+        # Open PDF from bytes
+        pdf_document = fitz.open(stream=file_content, filetype="pdf")
+        logger.info(f"PDF opened successfully with {len(pdf_document)} pages")
+        
+        images = []
+        for page_num in range(len(pdf_document)):
+            page = pdf_document.load_page(page_num)
+            
+            # High-quality rendering
+            pix = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            img_data = pix.tobytes("png")
+            
+            # Convert to numpy array via PIL
+            image = Image.open(io.BytesIO(img_data))
+            images.append(np.array(image))
+            
+            logger.info(f"Extracted image from page {page_num+1}")
+            
+        pdf_document.close()
+        return images
+    except Exception as e:
+        logger.error(f"PDF extraction failed: {str(e)}", exc_info=True)
+        raise ValueError(f"PDF extraction failed: {str(e)}")
+
+def preprocess_image(image_array):
     """
     Enhance image quality for better OCR accuracy.
     Args:
-        file_content (bytes): Binary content of the uploaded file.
+        image_array (np.array): Image array to process
     Returns:
         np.array: Preprocessed image array
     """
     try:
-        # Convert to PIL Image and enhance
-        image = Image.open(io.BytesIO(file_content)).convert('L')  # Convert to grayscale
+        # Convert to PIL Image if needed
+        if not isinstance(image_array, Image.Image):
+            image = Image.fromarray(image_array)
+        else:
+            image = image_array
+            
+        # Convert to grayscale
+        image = image.convert('L')
         
         # Resize large images while maintaining aspect ratio
         if max(image.size) > 2000:
@@ -48,6 +96,7 @@ def preprocess_image(file_content):
         
         return cv_image
     except Exception as e:
+        logger.error(f"Image preprocessing failed: {str(e)}", exc_info=True)
         raise ValueError(f"Image preprocessing failed: {str(e)}")
 
 def spell_check(text):
@@ -75,7 +124,7 @@ def spell_check(text):
             
         return corrected
     except Exception as e:
-        print(f"Spell check error: {str(e)}")
+        logger.error(f"Spell check error: {str(e)}")
         return text
 
 def validate_financial_terms(text):
@@ -95,40 +144,6 @@ def validate_financial_terms(text):
     text = re.sub(percent_pattern, r'\1%', text)
     
     return text
-
-def enhanced_ocr(file_content):
-    try:
-        logger.info("Starting OCR preprocessing")
-        preprocessed = preprocess_image(file_content)
-        logger.info("Image preprocessing completed")
-        
-        logger.info("Running EasyOCR")
-        results = reader.readtext(
-            preprocessed,
-            batch_size=4,
-            allowlist='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$%:.()/-&',
-            paragraph=True,
-            detail=0
-        )
-        extracted_text = " ".join(results)
-        logger.info(f"OCR text extraction completed, text length: {len(extracted_text)}")
-        
-        logger.info("Applying spell check")
-        extracted_text = spell_check(extracted_text)
-        logger.info("Spell check completed")
-        
-        logger.info("Validating financial terms")
-        extracted_text = validate_financial_terms(extracted_text)
-        logger.info("Financial terms validation completed")
-        
-        logger.info("Auto-correcting tables")
-        extracted_text = auto_correct_tables(extracted_text)
-        logger.info("Table correction completed")
-        
-        return extracted_text
-    except Exception as e:
-        logger.error(f"OCR processing failed: {str(e)}", exc_info=True)
-        raise RuntimeError(f"OCR processing failed: {str(e)}")
 
 def auto_correct_tables(extracted_text):
     """
@@ -157,3 +172,69 @@ def auto_correct_tables(extracted_text):
         extracted_text += "\n[Auto-corrected: Financial ratios validated]"
         
     return extracted_text
+
+def enhanced_ocr(file_content, file_type='application/pdf'):
+    try:
+        all_text = []
+        
+        # Handle based on file type
+        if 'pdf' in file_type.lower():
+            logger.info("Processing PDF file")
+            images = extract_images_from_pdf(file_content)
+            logger.info(f"Extracted {len(images)} images from PDF")
+            
+            # Process each page
+            for i, image in enumerate(images):
+                logger.info(f"Processing PDF page {i+1}")
+                preprocessed = preprocess_image(image)
+                
+                # Run OCR on the page
+                page_results = reader.readtext(
+                    preprocessed,
+                    batch_size=4,
+                    allowlist='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$%:.()/-&',
+                    paragraph=True,
+                    detail=0
+                )
+                
+                page_text = " ".join(page_results)
+                all_text.append(f"--- Page {i+1} ---\n{page_text}")
+                logger.info(f"Completed OCR for page {i+1}, text length: {len(page_text)}")
+        else:
+            # Handle regular image files
+            logger.info("Processing image file")
+            # Convert bytes to a stream for PIL
+            image = Image.open(io.BytesIO(file_content))
+            logger.info("Image loaded successfully")
+            
+            preprocessed = preprocess_image(image)
+            results = reader.readtext(
+                preprocessed,
+                batch_size=4,
+                allowlist='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ$%:.()/-&',
+                paragraph=True,
+                detail=0
+            )
+            all_text = [" ".join(results)]
+            logger.info(f"Completed OCR, text length: {len(all_text[0])}")
+        
+        # Combine all extracted text
+        extracted_text = "\n\n".join(all_text)
+        
+        # Post-processing steps
+        logger.info("Applying spell check")
+        extracted_text = spell_check(extracted_text)
+        logger.info("Spell check completed")
+        
+        logger.info("Validating financial terms")
+        extracted_text = validate_financial_terms(extracted_text)
+        logger.info("Financial terms validation completed")
+        
+        logger.info("Auto-correcting tables")
+        extracted_text = auto_correct_tables(extracted_text)
+        logger.info("Table correction completed")
+        
+        return extracted_text
+    except Exception as e:
+        logger.error(f"OCR processing failed: {str(e)}", exc_info=True)
+        raise RuntimeError(f"OCR processing failed: {str(e)}")
