@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Clock, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
-const NEWS_API_KEY = '#'; // Replace with your API key
+const NEWS_API_KEY = '43e6f0c16dad4e5695a19daa9a501dbf'; // Replace with your API key
 
 interface NewsCardProps {
   title: string;

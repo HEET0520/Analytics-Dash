@@ -11,91 +11,132 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
+import { RefreshCw } from 'lucide-react';
 
-const FINNHUB_API_KEY = 'd0392ppr01qvvb92vm80d0392ppr01qvvb92vm8g';
+const FINNHUB_API_KEY = 'd03tdlpr01qm4vp3uh60d03tdlpr01qm4vp3uh6g'; // Replace with a valid key if needed
 
-const fetchChartData = async (symbol: string, timeRange: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y') => {
-  const resolutionMap = {
-    '1D': '1',
-    '1W': '60',
-    '1M': 'D',
-    '3M': 'D',
-    '6M': 'W',
-    '1Y': 'W',
-    '5Y': 'M',
-  };
+interface ChartData {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
-  const resolution = resolutionMap[timeRange];
-  const now = Math.floor(Date.now() / 1000);
-  let from, to;
+const fetchChartData = async (
+  symbol: string,
+  timeRange: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y'
+): Promise<ChartData[]> => {
+  try {
+    const resolutionMap = {
+      '1D': '1',
+      '1W': '60',
+      '1M': 'D',
+      '3M': 'D',
+      '6M': 'W',
+      '1Y': 'W',
+      '5Y': 'M',
+    };
+    const resolution = resolutionMap[timeRange];
+    const now = Math.floor(Date.now() / 1000);
+    let from, to;
 
-  switch (timeRange) {
-    case '1D':
-      from = now - 86400; // 1 day in seconds
-      to = now;
-      break;
-    case '1W':
-      from = now - 7 * 86400;
-      to = now;
-      break;
-    case '1M':
-      from = now - 30 * 86400;
-      to = now;
-      break;
-    case '3M':
-      from = now - 90 * 86400;
-      to = now;
-      break;
-    case '6M':
-      from = now - 182 * 86400;
-      to = now;
-      break;
-    case '1Y':
-      from = now - 365 * 86400;
-      to = now;
-      break;
-    case '5Y':
-      from = now - 5 * 365 * 86400;
-      to = now;
-      break;
-    default:
-      from = now - 10 * 365 * 86400;
-      to = now;
+    switch (timeRange) {
+      case '1D':
+        const today = new Date();
+        today.setHours(9, 30, 0, 0); // Start of trading day (US market)
+        from = Math.floor(today.getTime() / 1000);
+        to = now;
+        break;
+      case '1W':
+        from = now - 7 * 86400;
+        to = now;
+        break;
+      case '1M':
+        from = now - 30 * 86400;
+        to = now;
+        break;
+      case '3M':
+        from = now - 90 * 86400;
+        to = now;
+        break;
+      case '6M':
+        from = now - 182 * 86400;
+        to = now;
+        break;
+      case '1Y':
+        from = now - 365 * 86400;
+        to = now;
+        break;
+      case '5Y':
+        from = now - 5 * 365 * 86400;
+        to = now;
+        break;
+      default:
+        from = now - 365 * 86400;
+        to = now;
+    }
+
+    const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP error! Status: ${response.status}`);
+    }
+    const data = await response.json();
+
+    if (data.s === 'ok') {
+      return data.t.map((time: number, index: number) => ({
+        date: new Date(time * 1000).toLocaleDateString(),
+        open: data.o[index],
+        high: data.h[index],
+        low: data.l[index],
+        close: data.c[index],
+        volume: data.v[index],
+      }));
+    } else if (data.s === 'no_data') {
+      console.warn(`No data available for ${symbol} in time range ${timeRange}`);
+      return [];
+    } else {
+      console.error('Unexpected API response:', data);
+      return [];
+    }
+  } catch (error) {
+    console.error('Error fetching chart data:', error);
+    return [];
   }
-
-  const url = `https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=${resolution}&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`;
-  const response = await fetch(url);
-  const data = await response.json();
-
-  if (data.s === 'ok') {
-    return data.t.map((time: number, index: number) => ({
-      date: new Date(time * 1000).toLocaleDateString(),
-      open: data.o[index],
-      high: data.h[index],
-      low: data.l[index],
-      close: data.c[index],
-      volume: data.v[index],
-    }));
-  }
-  return [];
 };
 
 interface StockChartProps {
   symbol: string;
   timeRange: '1D' | '1W' | '1M' | '3M' | '6M' | '1Y' | '5Y';
-  chartType: string;
+  chartType: 'line' | 'bar' | 'candle';
 }
 
-const StockChart = ({ symbol, timeRange, chartType }: StockChartProps): JSX.Element => {
-  const [data, setData] = useState<any[]>([]);
+const StockChart: React.FC<StockChartProps> = ({ symbol, timeRange, chartType }) => {
+  const [data, setData] = useState<ChartData[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
+      setLoading(true);
+      setError(null);
       const chartData = await fetchChartData(symbol, timeRange);
+      console.log('Fetched chart data:', chartData); // Debug log
       setData(chartData);
+      setLoading(false);
+      if (chartData.length === 0) {
+        setError(`No data available for ${symbol} in the selected time range`);
+      }
     };
 
-    fetchData();
+    if (symbol) {
+      fetchData();
+    } else {
+      setLoading(false);
+      setError('No stock symbol provided');
+    }
   }, [symbol, timeRange]);
 
   const formatXAxis = (tick: string) => {
@@ -114,21 +155,46 @@ const StockChart = ({ symbol, timeRange, chartType }: StockChartProps): JSX.Elem
         <p className="font-medium text-white">{label}</p>
         {chartType === 'candle' ? (
           <>
-            <p className="text-gray-300">Open: <span className="text-white">${entry.open.toFixed(2)}</span></p>
-            <p className="text-gray-300">Close: <span className="text-white">${entry.close.toFixed(2)}</span></p>
-            <p className="text-gray-300">High: <span className="text-white">${entry.high.toFixed(2)}</span></p>
-            <p className="text-gray-300">Low: <span className="text-white">${entry.low.toFixed(2)}</span></p>
+            <p className="text-gray-300">
+              Open: <span className="text-white">${entry.open.toFixed(2)}</span>
+            </p>
+            <p className="text-gray-300">
+              Close: <span className="text-white">${entry.close.toFixed(2)}</span>
+            </p>
+            <p className="text-gray-300">
+              High: <span className="text-white">${entry.high.toFixed(2)}</span>
+            </p>
+            <p className="text-gray-300">
+              Low: <span className="text-white">${entry.low.toFixed(2)}</span>
+            </p>
           </>
         ) : (
-          <p className="text-gray-300">Price: <span className="text-white">${entry.close.toFixed(2)}</span></p>
+          <p className="text-gray-300">
+            Price: <span className="text-white">${entry.close.toFixed(2)}</span>
+          </p>
         )}
-        <p className="text-gray-300">Volume: <span className="text-white">{entry.volume.toLocaleString()}</span></p>
+        <p className="text-gray-300">
+          Volume: <span className="text-white">{entry.volume.toLocaleString()}</span>
+        </p>
       </div>
     );
   };
 
   const renderChart = () => {
-    if (!data.length) return <div className="text-gray-400 text-center py-10">No data available</div>;
+    if (loading) {
+      return (
+        <div className="text-gray-400 text-center py-10 flex items-center justify-center">
+          <RefreshCw size={20} className="animate-spin mr-2" />
+          Loading chart data...
+        </div>
+      );
+    }
+    if (error) {
+      return <div className="text-red-400 text-center py-10">{error}</div>;
+    }
+    if (!data.length) {
+      return <div className="text-gray-400 text-center py-10">No data available for {symbol}</div>;
+    }
 
     switch (chartType) {
       case 'line':
@@ -226,35 +292,54 @@ const StockChart = ({ symbol, timeRange, chartType }: StockChartProps): JSX.Elem
                 tickFormatter={(value) => `$${value.toFixed(2)}`}
               />
               <Tooltip content={<CustomTooltip />} />
-              {data.map((entry, index) => (
-                <React.Fragment key={index}>
-                  <Line
-                    dataKey="high"
-                    stroke={entry.close >= entry.open ? '#10b981' : '#ef4444'}
-                    dot={false}
-                    activeDot={false}
-                    isAnimationActive={false}
-                  />
-                  <Line
-                    dataKey="low"
-                    stroke={entry.close >= entry.open ? '#10b981' : '#ef4444'}
-                    dot={false}
-                    activeDot={false}
-                    isAnimationActive={false}
-                  />
-                  <Bar
-                    dataKey={entry.close >= entry.open ? 'open' : 'close'} // Adjusted for candlestick
-                    fill={entry.close >= entry.open ? '#10b981' : '#ef4444'}
-                    stroke={entry.close >= entry.open ? '#10b981' : '#ef4444'}
-                    barSize={timeRange === '1D' ? 5 : timeRange === '1W' ? 15 : 20}
-                  />
-                </React.Fragment>
-              ))}
+              <Bar
+                dataKey={(entry) => ({
+                  open: entry.open,
+                  close: entry.close,
+                  high: entry.high,
+                  low: entry.low,
+                })}
+                shape={(props: any) => {
+                  const { x, y, width, payload, yAxis } = props;
+                  const { open, close, high, low } = payload;
+                  const isBullish = close >= open;
+                  const fill = isBullish ? '#10b981' : '#ef4444';
+                  const bodyHeight =
+                    Math.abs(close - open) * (props.height / (yAxis.domain[1] - yAxis.domain[0]));
+                  const wickTop = yAxis.scale(high);
+                  const wickBottom = yAxis.scale(low);
+                  const bodyY = isBullish ? yAxis.scale(close) : yAxis.scale(open);
+
+                  return (
+                    <g>
+                      {/* Wick */}
+                      <line
+                        x1={x + width / 2}
+                        x2={x + width / 2}
+                        y1={wickTop}
+                        y2={wickBottom}
+                        stroke={fill}
+                        strokeWidth={1}
+                      />
+                      {/* Body */}
+                      <rect
+                        x={x}
+                        y={bodyY}
+                        width={width}
+                        height={bodyHeight || 1} // Ensure non-zero height
+                        fill={fill}
+                        stroke={fill}
+                      />
+                    </g>
+                  );
+                }}
+                barSize={timeRange === '1D' ? 5 : timeRange === '1W' ? 15 : 20}
+              />
             </ComposedChart>
           </ResponsiveContainer>
         );
       default:
-        return null;
+        return <div className="text-red-400 text-center py-10">Invalid chart type</div>;
     }
   };
 

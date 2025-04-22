@@ -14,6 +14,7 @@ interface AIAnalysisProps {
 
 const AIAnalysis: React.FC<AIAnalysisProps> = ({ stock }) => {
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<{
     summary: string;
     sentiment: 'bullish' | 'bearish' | 'neutral';
@@ -27,37 +28,46 @@ const AIAnalysis: React.FC<AIAnalysisProps> = ({ stock }) => {
     recommendation: 'buy' | 'sell' | 'hold';
   } | null>(null);
 
-  useEffect(() => {
-    // Simulate API call to your AI model
+  const validateTicker = async (ticker: string) => {
+    try {
+      const response = await fetch(`http://localhost:8000/validate-ticker/${ticker}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      return data.valid;
+    } catch {
+      return false;
+    }
+  };
+
+  const fetchAnalysis = async () => {
     setLoading(true);
-    setTimeout(() => {
-      setAnalysis({
-        summary: `Based on our AI analysis, ${stock.name} (${stock.symbol}) shows strong technical indicators with positive momentum. Recent earnings exceeded expectations by 12%, and the company has announced expansion into new markets. However, there are some concerns about supply chain disruptions that could impact short-term performance.`,
-        sentiment: stock.change >= 0 ? 'bullish' : 'bearish',
-        confidence: 78,
-        keyFactors: [
-          'Strong quarterly earnings growth',
-          'Positive analyst revisions',
-          'Expanding profit margins',
-          'Potential supply chain disruptions',
-          'Increasing competition in core markets'
-        ],
-        targetPrice: {
-          low: stock.price * 0.9,
-          mid: stock.price * 1.15,
-          high: stock.price * 1.3
-        },
-        recommendation: stock.change >= 0 ? 'buy' : 'hold'
-      });
+    setError(null);
+    try {
+      if (!(await validateTicker(stock.symbol))) {
+        throw new Error(
+          `Ticker ${stock.symbol} is not supported by the data provider. Please try major tickers like TSLA, MSFT, or AAPL.`
+        );
+      }
+      const response = await fetch(`http://localhost:8000/analyze/${stock.symbol}`);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`);
+      }
+      const data = await response.json();
+      setAnalysis(data);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
       setLoading(false);
-    }, 1500);
-  }, [stock]);
+    }
+  };
+
+  useEffect(() => {
+    fetchAnalysis();
+  }, [stock.symbol]);
 
   const refreshAnalysis = () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-    }, 1500);
+    fetchAnalysis();
   };
 
   return (
@@ -81,6 +91,11 @@ const AIAnalysis: React.FC<AIAnalysisProps> = ({ stock }) => {
         <div className="flex flex-col items-center justify-center py-8">
           <RefreshCw size={30} className="text-indigo-500 animate-spin mb-4" />
           <p className="text-gray-300">Analyzing market data...</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-8">
+          <AlertTriangle size={30} className="text-yellow-500 mb-4" />
+          <p className="text-gray-300 text-center">{error}</p>
         </div>
       ) : analysis ? (
         <div className="space-y-4">
@@ -124,7 +139,7 @@ const AIAnalysis: React.FC<AIAnalysisProps> = ({ stock }) => {
                     style={{ width: `${analysis.confidence}%` }}
                   ></div>
                 </div>
-                {analysis.confidence}%
+                {analysis.confidence.toFixed(0)}%
               </div>
             </div>
 
@@ -191,24 +206,15 @@ const AIAnalysis: React.FC<AIAnalysisProps> = ({ stock }) => {
               <div className="mt-2 relative h-2 bg-gray-700 rounded-full">
                 <div
                   className="absolute h-2 bg-red-500 rounded-full"
-                  style={{
-                    left: '0%',
-                    width: '33%',
-                  }}
+                  style={{ left: '0%', width: '33%' }}
                 ></div>
                 <div
                   className="absolute h-2 bg-indigo-500 rounded-full"
-                  style={{
-                    left: '33%',
-                    width: '33%',
-                  }}
+                  style={{ left: '33%', width: '33%' }}
                 ></div>
                 <div
                   className="absolute h-2 bg-green-500 rounded-full"
-                  style={{
-                    left: '66%',
-                    width: '34%',
-                  }}
+                  style={{ left: '66%', width: '34%' }}
                 ></div>
                 <div
                   className="absolute w-2 h-4 bg-white rounded-full top-1/2 transform -translate-y-1/2"
