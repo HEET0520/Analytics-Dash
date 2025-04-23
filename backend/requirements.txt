@@ -33,3 +33,4 @@ redis # Caching
 # Utilities
 pyyaml  # Config parsing
 requests
+groq

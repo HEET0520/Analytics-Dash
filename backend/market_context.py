@@ -30,12 +30,14 @@ class MarketContextAgent:
             return self.cache[cache_key]
 
         news = self.fetch_news(ticker, retries)
-        if not news:
-            return "No recent news available."
+        if isinstance(news, str):
+            return news
 
+        # Build news summary string outside f-string to avoid backslash issues
+        news_summary = "".join([f"- {article['title']} ({article['description']})\n" for article in news[:5]])
         prompt = (
-            f"Summarize the market sentiment for {ticker} based on the following news articles (max 1000 chars):\n"
-            f"{news[:1000]}\n"
+            f"Summarize the market sentiment for {ticker} based on the following news articles:\n"
+            f"{news_summary}"
             "Provide a concise summary (100-150 words) focusing on sentiment, key events, and their potential impact on the stock."
         )
         for attempt in range(retries):
@@ -55,7 +57,7 @@ class MarketContextAgent:
                     time.sleep(2 ** attempt)
         return "Error generating market context."
 
-    def fetch_news(self, ticker, retries):
+    def fetch_news(self, ticker, retries=3):
         for attempt in range(retries):
             try:
                 url = (
@@ -65,12 +67,22 @@ class MarketContextAgent:
                 response = requests.get(url)
                 response.raise_for_status()
                 articles = response.json().get("articles", [])
-                news = " ".join([article["title"] for article in articles[:5] if article.get("title")])
-                logger.info(f"Fetched {len(articles)} news articles for {ticker}")
-                return news if news else "No recent news found."
+                if not articles:
+                    logger.info(f"No news articles found for {ticker}")
+                    return "No recent news found."
+                news = [
+                    {
+                        "title": article["title"] or "No title available",
+                        "source": article["source"]["name"] or "Unknown source",
+                        "published_at": article["publishedAt"] or "Unknown date",
+                        "description": article["description"] or "No description available",
+                        "url": article["url"] or "#"
+                    }
+                    for article in articles[:5]
+                ]
+                logger.info(f"Fetched {len(news)} news articles for {ticker}")
+                return news
             except requests.exceptions.HTTPError as e:
-                if response.status_code == 403:
-                    return f"Error: Invalid or restricted NewsAPI key for ticker {ticker}."
                 logger.error(f"News fetch attempt {attempt + 1} failed: {str(e)}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
@@ -78,8 +90,5 @@ class MarketContextAgent:
                 logger.error(f"News fetch attempt {attempt + 1} failed: {str(e)}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
+        logger.error(f"Error fetching news for {ticker} after {retries} attempts")
         return f"Error fetching news for {ticker} after {retries} attempts."
-
-if __name__ == "__main__":
-    agent = MarketContextAgent()
-    print(agent.get_market_context("TSLA"))

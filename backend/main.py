@@ -1,11 +1,10 @@
-from fastapi import FastAPI, HTTPException, File, UploadFile
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from head_agent import HeadAgent
 import logging
 from pydantic import BaseModel
-import os
-import shutil
-from tasks import analyze_document
+from typing import List, Dict, Any
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -24,73 +23,46 @@ class AnalysisResponse(BaseModel):
     summary: str
     sentiment: str
     confidence: float
-    keyFactors: list[str]
-    targetPrice: dict[str, float]
+    keyFactors: List[str]
+    targetPrice: Dict[str, float]
     recommendation: str
     dataAvailability: str
 
-class TaskStatus(BaseModel):
-    task_id: str
-    status: str
-    summary: str = ""
-    analysis_results: str = ""
-    financial_metrics: str = ""
-    key_insights: list[str] = []
-    sentiment: str = "neutral"
-    recommendations: list[str] = []
+class PriceData(BaseModel):
+    date: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: int
+
+class PricesResponse(BaseModel):
+    ticker: str
+    prices: List[PriceData]
     error: str = ""
 
-@app.post("/analyze/", response_model=TaskStatus)
-async def upload_document(file: UploadFile = File(...)):
-    logger.info(f"Received file upload: {file.filename}")
-    try:
-        # Save the file temporarily
-        upload_dir = "uploads"
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir)
-        file_path = os.path.join(upload_dir, file.filename)
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+class NewsItem(BaseModel):
+    title: str
+    source: str
+    published_at: str
+    description: str
+    url: str
 
-        # Start the Celery task
-        task = analyze_document.delay(file_path, file.filename)
-        return {"task_id": task.id, "status": "pending"}
-    except Exception as e:
-        logger.error(f"File upload failed: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+class MarketContextResponse(BaseModel):
+    ticker: str
+    news: List[NewsItem]
+    error: str = ""
 
-@app.get("/task/{task_id}", response_model=TaskStatus)
-async def get_task_status(task_id: str):
-    from celery.result import AsyncResult
-    task = AsyncResult(task_id)
-    if task.state == "PENDING":
-        return {"task_id": task_id, "status": "pending"}
-    elif task.state == "SUCCESS":
-        result = task.result
-        if result.get("status") == "failed":
-            return {
-                "task_id": task_id,
-                "status": "failed",
-                "error": result.get("error", "Unknown error")
-            }
-        return {
-            "task_id": task_id,
-            "status": "completed",
-            "summary": result.get("summary", ""),
-            "analysis_results": result.get("analysis_results", ""),
-            "financial_metrics": result.get("financial_metrics", ""),
-            "key_insights": result.get("key_insights", []),
-            "sentiment": result.get("sentiment", "neutral"),
-            "recommendations": result.get("recommendations", [])
-        }
-    elif task.state == "FAILURE":
-        return {
-            "task_id": task_id,
-            "status": "failed",
-            "error": str(task.result)
-        }
-    else:
-        return {"task_id": task_id, "status": task.state}
+class AllDataResponse(BaseModel):
+    ticker: str
+    historical_prices: List[PriceData]
+    fundamentals: Dict[str, Any]
+    technicals: Dict[str, float]
+    basic_financials: Dict[str, Any]
+    financials_reported: List[Dict[str, Any]]
+    company_news: List[Dict[str, Any]]
+    timestamp: str
+    errors: List[str]
 
 @app.get("/analyze/{ticker}", response_model=AnalysisResponse)
 async def analyze_stock(ticker: str):
@@ -165,6 +137,70 @@ async def analyze_stock(ticker: str):
     except Exception as e:
         logger.error(f"Error processing response for {ticker}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing analysis: {str(e)}")
+
+@app.get("/prices/{ticker}", response_model=PricesResponse)
+async def get_stock_prices(ticker: str):
+    logger.info(f"Received request for prices of {ticker}")
+    try:
+        head_agent = HeadAgent()
+        prices = head_agent.stock_analyzer_agent.fetch_stock_prices(ticker.upper(), retries=3)
+        
+        if isinstance(prices, str):
+            logger.warning(f"No price data found for {ticker}: {prices}")
+            return PricesResponse(ticker=ticker, prices=[], error=prices)
+
+        logger.info(f"Successfully retrieved {len(prices)} price points for {ticker}")
+        return PricesResponse(ticker=ticker, prices=prices, error="")
+    except Exception as e:
+        logger.error(f"Error retrieving prices for {ticker}: {str(e)}")
+        return PricesResponse(
+            ticker=ticker,
+            prices=[],
+            error=f"Failed to retrieve prices: {str(e)}"
+        )
+
+@app.get("/market-context/{ticker}", response_model=MarketContextResponse)
+async def get_market_context(ticker: str):
+    logger.info(f"Received request for market context of {ticker}")
+    try:
+        head_agent = HeadAgent()
+        news = head_agent.market_context_agent.fetch_news(ticker.upper(), retries=3)
+        
+        if isinstance(news, str):
+            logger.warning(f"No news data found for {ticker}: {news}")
+            return MarketContextResponse(ticker=ticker, news=[], error=news)
+
+        logger.info(f"Successfully retrieved {len(news)} news articles for {ticker}")
+        return MarketContextResponse(ticker=ticker, news=news, error="")
+    except Exception as e:
+        logger.error(f"Error retrieving market context for {ticker}: {str(e)}")
+        return MarketContextResponse(
+            ticker=ticker,
+            news=[],
+            error=f"Failed to retrieve market context: {str(e)}"
+        )
+
+@app.get("/all-data/{ticker}", response_model=AllDataResponse)
+async def get_all_data(ticker: str):
+    logger.info(f"Received request for all data of {ticker}")
+    try:
+        head_agent = HeadAgent()
+        data = head_agent.stock_analyzer_agent.fetch_all_data(ticker.upper(), retries=3)
+        logger.info(f"Successfully retrieved all data for {ticker}")
+        return AllDataResponse(**data)
+    except Exception as e:
+        logger.error(f"Error retrieving all data for {ticker}: {str(e)}")
+        return AllDataResponse(
+            ticker=ticker,
+            historical_prices=[],
+            fundamentals={},
+            technicals={"sma20": 0.0, "rsi": 0.0},
+            basic_financials={},
+            financials_reported=[],
+            company_news=[],
+            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+            errors=[f"Failed to retrieve all data: {str(e)}"]
+        )
 
 @app.get("/validate-ticker/{ticker}")
 async def validate_ticker(ticker: str):
