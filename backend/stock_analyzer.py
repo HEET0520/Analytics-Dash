@@ -26,7 +26,7 @@ class StockAnalyzerAgent:
         self.cache = TTLCache(maxsize=100, ttl=3600)
 
     def fetch_stock_prices(self, ticker, retries=3):
-        """Fetch 30 days of historical OHLCV data from yfinance."""
+        """Fetch 1 year of historical OHLCV data from yfinance."""
         logger.info(f"Fetching historical prices for {ticker} from yfinance")
         cache_key = f"prices_{ticker}"
         if cache_key in self.cache:
@@ -37,7 +37,7 @@ class StockAnalyzerAgent:
             try:
                 stock = yf.Ticker(ticker)
                 end_date = datetime.now()
-                start_date = end_date - timedelta(days=30)
+                start_date = end_date - timedelta(days=365)  # Updated to 1 year
                 hist = stock.history(start=start_date, end=end_date, interval="1d")
                 if hist.empty:
                     logger.warning(f"No price data found for {ticker} on yfinance")
@@ -63,6 +63,7 @@ class StockAnalyzerAgent:
                     time.sleep(2 ** attempt)
         logger.error(f"No price data available for {ticker} after {retries} retries")
         return f"No price data available for {ticker} after {retries} retries."
+
 
     def fetch_fundamentals(self, ticker, retries=3):
         """Fetch fundamentals from Finnhub's /stock/metric and /stock/profile2."""
@@ -118,7 +119,7 @@ class StockAnalyzerAgent:
         return {}
 
     def fetch_basic_financials(self, ticker, retries=3):
-        """Fetch basic financials from Finnhub's /stock/profile2."""
+        """Fetch basic financials from Finnhub's /stock/metrics."""
         logger.info(f"Fetching basic financials for {ticker} from Finnhub")
         cache_key = f"basic_financials_{ticker}"
         if cache_key in self.cache:
@@ -127,7 +128,7 @@ class StockAnalyzerAgent:
 
         for attempt in range(retries):
             try:
-                url = f"https://finnhub.io/api/v1/stock/profile2?symbol={ticker}&token={self.finnhub_api_key}"
+                url = f"https://finnhub.io/api/v1/stock/metric?symbol={ticker}&token={self.finnhub_api_key}"
                 response = requests.get(url)
                 response.raise_for_status()
                 data = response.json()

@@ -1,36 +1,15 @@
-# Core AI/ML
-torch
-transformers
-
-# OCR Processing
-easyocr
-opencv-python-headless # Lightweight OpenCV
-pillow  # Image processing
-scikit-image  # Advanced image processing
-numpy  # Array operations
-
-# Text Processing
-textblob
-python-Levenshtein # For text similarity
-nltk  # NLP tools
-
-# Vector Database & Embeddings
-qdrant-client
-langchain-community
-sentence-transformers
-
-# Financial Analysis
-pymc
-alpha-vantage
-
-# API & Web
-fastapi
-uvicorn
-newsapi-python
-python-dotenv
-redis # Caching
-
-# Utilities
-pyyaml  # Config parsing
-requests
-groq
+fastapi==0.115.0 
+uvicorn[standard]==0.30.6 
+requests==2.32.3 
+numpy==1.26.4 
+cachetools==5.5.0 
+groq==0.11.0 
+yfinance==0.2.44 
+PyPDF2==3.0.1 
+sentence-transformers==3.1.1 
+faiss-cpu==1.8.0 
+opencv-python==4.10.0.84 
+pytesseract==0.3.13 
+PyMuPDF==1.24.10 
+Pillow==10.4.0 
+python-dotenv==1.0.1
