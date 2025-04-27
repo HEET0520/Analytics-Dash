@@ -1,11 +1,15 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from head_agent import HeadAgent
-from document_analyzer import analyze_report, process_document_task, get_task_status
+from document_analyzer import analyze_report, process_document_task, get_task_status,extract_text_from_pdf,process_graphs,extract_images_from_pdf
 import logging
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from datetime import datetime
+import time
+from io import BytesIO
+from PIL import Image
+import numpy as np
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -270,9 +274,9 @@ async def analyze_document_sync(file: UploadFile = File(...)):
     
     try:
         if file_extension == "pdf":
-            text = process_document_task.extract_text_from_pdf(contents)
-            images = process_document_task.extract_images_from_pdf(contents)
-            graph_text = process_document_task.process_graphs(images)
+            text = extract_text_from_pdf(contents)
+            images = extract_images_from_pdf(contents)
+            graph_text = process_graphs(images)
         else:
             image = Image.open(BytesIO(contents))
             image_np = np.array(image)
