@@ -16,13 +16,11 @@ load_dotenv()
 
 class StockAnalyzerAgent:
     def __init__(self):
-        self.finnhub_api_key = os.getenv("FINNHUB_API_KEY")
         groq_api_key = os.getenv("GROQ_API_KEY")
         self.groq_client = Groq(api_key=groq_api_key) if groq_api_key else None
-        logger.info(f"Finnhub API key loaded: {'Yes' if self.finnhub_api_key else 'No'}")
         logger.info(f"Groq API key loaded: {'Yes' if groq_api_key else 'No'}")
-        if not all([self.groq_client, self.finnhub_api_key]):
-            raise ValueError("Missing API keys in .env file")
+        if not self.groq_client:
+            raise ValueError("Missing GROQ_API_KEY in .env file")
         self.cache = TTLCache(maxsize=100, ttl=3600)
 
     def fetch_stock_prices(self, ticker, retries=3):
@@ -37,7 +35,7 @@ class StockAnalyzerAgent:
             try:
                 stock = yf.Ticker(ticker)
                 end_date = datetime.now()
-                start_date = end_date - timedelta(days=365)  # Updated to 1 year
+                start_date = end_date - timedelta(days=365)
                 hist = stock.history(start=start_date, end=end_date, interval="1d")
                 if hist.empty:
                     logger.warning(f"No price data found for {ticker} on yfinance")
@@ -64,196 +62,128 @@ class StockAnalyzerAgent:
         logger.error(f"No price data available for {ticker} after {retries} retries")
         return f"No price data available for {ticker} after {retries} retries."
 
-
-    def fetch_fundamentals(self, ticker, retries=3):
-        """Fetch fundamentals from Finnhub's /stock/metric and /stock/profile2."""
-        logger.info(f"Fetching fundamentals for {ticker} from Finnhub")
-        cache_key = f"fundamentals_{ticker}"
+    def fetch_income_statement(self, ticker, retries=3):
+        """Fetch quarterly income statement data from yfinance."""
+        logger.info(f"Fetching income statement for {ticker} from yfinance")
+        cache_key = f"income_stmt_{ticker}"
         if cache_key in self.cache:
-            logger.info(f"Returning cached fundamentals for {ticker}")
+            logger.info(f"Returning cached income statement for {ticker}")
             return self.cache[cache_key]
 
         for attempt in range(retries):
             try:
-                url = (
-                    f"https://finnhub.io/api/v1/stock/metric?symbol={ticker}&metric=all"
-                    f"&token={self.finnhub_api_key}"
-                )
-                response = requests.get(url)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("metric"):
-                    self.cache[cache_key] = data["metric"]
-                    logger.info(f"Fetched fundamentals for {ticker}")
-                    return data["metric"]
-            except requests.exceptions.HTTPError as e:
-                if response.status_code == 403:
-                    logger.error(f"Fundamentals fetch failed: Invalid or restricted Finnhub API key for {ticker}")
-                    return f"Invalid or restricted Finnhub API key for {ticker}."
-                logger.error(f"Fundamentals fetch attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
-            except Exception as e:
-                logger.error(f"Fundamentals fetch attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
-
-        try:
-            url = f"https://finnhub.io/api/v1/stock/profile2?symbol={ticker}&token={self.finnhub_api_key}"
-            response = requests.get(url)
-            response.raise_for_status()
-            data = response.json()
-            if data:
-                fallback_fundamentals = {
-                    "marketCapitalization": data.get("marketCapitalization"),
-                    "peTTM": data.get("pe"),
-                    "epsTTM": data.get("eps")
+                stock = yf.Ticker(ticker)
+                income_stmt = stock.get_income_stmt(freq="quarterly")
+                if income_stmt.empty:
+                    logger.warning(f"No income statement data found for {ticker}")
+                    return f"No income statement data available for {ticker}."
+                data = income_stmt.to_dict()
+                formatted_data = {
+                    "total_revenue": data.get("TotalRevenue", {}),
+                    "net_income": data.get("NetIncome", {}),
+                    "gross_profit": data.get("GrossProfit", {}),
+                    "operating_income": data.get("OperatingIncome", {})
                 }
-                self.cache[cache_key] = fallback_fundamentals
-                logger.info(f"Fetched fallback fundamentals for {ticker} from profile2")
-                return fallback_fundamentals
-        except Exception as e:
-            logger.error(f"Fallback fundamentals fetch failed for {ticker}: {str(e)}")
+                self.cache[cache_key] = formatted_data
+                logger.info(f"Fetched income statement for {ticker}")
+                return formatted_data
+            except Exception as e:
+                logger.error(f"Attempt {attempt + 1} failed fetching income statement for {ticker}: {str(e)}")
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+        logger.error(f"No income statement data available for {ticker}")
+        return f"No income statement data available for {ticker}."
 
-        logger.error(f"No fundamentals data available for {ticker}")
-        return {}
-
-    def fetch_basic_financials(self, ticker, retries=3):
-        """Fetch basic financials from Finnhub's /stock/metrics."""
-        logger.info(f"Fetching basic financials for {ticker} from Finnhub")
-        cache_key = f"basic_financials_{ticker}"
+    def fetch_cash_flow(self, ticker, retries=3):
+        """Fetch quarterly cash flow data from yfinance."""
+        logger.info(f"Fetching cash flow for {ticker} from yfinance")
+        cache_key = f"cash_flow_{ticker}"
         if cache_key in self.cache:
-            logger.info(f"Returning cached basic financials for {ticker}")
+            logger.info(f"Returning cached cash flow for {ticker}")
             return self.cache[cache_key]
 
         for attempt in range(retries):
             try:
-                url = f"https://finnhub.io/api/v1/stock/metric?symbol={ticker}&token={self.finnhub_api_key}"
-                response = requests.get(url)
-                response.raise_for_status()
-                data = response.json()
-                if data:
-                    basic_financials = {
-                        "name": data.get("name", "N/A"),
-                        "ticker": data.get("ticker", ticker),
-                        "exchange": data.get("exchange", "N/A"),
-                        "industry": data.get("finnhubIndustry", "N/A"),
-                        "marketCapitalization": data.get("marketCapitalization", None),
-                        "shareOutstanding": data.get("shareOutstanding", None),
-                        "ipo": data.get("ipo", "N/A"),
-                        "weburl": data.get("weburl", "N/A")
-                    }
-                    self.cache[cache_key] = basic_financials
-                    logger.info(f"Fetched basic financials for {ticker}")
-                    return basic_financials
-                return f"No basic financials available for {ticker}."
-            except requests.exceptions.HTTPError as e:
-                if response.status_code == 403:
-                    logger.error(f"Basic financials fetch failed: Invalid or restricted Finnhub API key for {ticker}")
-                    return f"Invalid or restricted Finnhub API key for {ticker}."
-                logger.error(f"Basic financials fetch attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
+                stock = yf.Ticker(ticker)
+                cash_flow = stock.get_cash_flow(freq="quarterly")
+                if cash_flow.empty:
+                    logger.warning(f"No cash flow data found for {ticker}")
+                    return f"No cash flow data available for {ticker}."
+                data = cash_flow.to_dict()
+                formatted_data = {
+                    "operating_cash_flow": data.get("OperatingCashFlow", {}),
+                    "free_cash_flow": data.get("FreeCashFlow", {})
+                }
+                self.cache[cache_key] = formatted_data
+                logger.info(f"Fetched cash flow for {ticker}")
+                return formatted_data
             except Exception as e:
-                logger.error(f"Basic financials fetch attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"Attempt {attempt + 1} failed fetching cash flow for {ticker}: {str(e)}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
-        logger.error(f"No basic financials available for {ticker}")
-        return f"No basic financials available for {ticker}."
+        logger.error(f"No cash flow data available for {ticker}")
+        return f"No cash flow data available for {ticker}."
 
-    def fetch_financials_reported(self, ticker, retries=3):
-        """Fetch financials as reported from Finnhub's /financials-reported."""
-        logger.info(f"Fetching financials as reported for {ticker} from Finnhub")
-        cache_key = f"financials_reported_{ticker}"
+    def fetch_eps_data(self, ticker, retries=3):
+        """Fetch EPS trend and revision data from yfinance."""
+        logger.info(f"Fetching EPS trend and revision for {ticker} from yfinance")
+        cache_key = f"eps_data_{ticker}"
         if cache_key in self.cache:
-            logger.info(f"Returning cached financials as reported for {ticker}")
+            logger.info(f"Returning cached EPS data for {ticker}")
             return self.cache[cache_key]
 
         for attempt in range(retries):
             try:
-                url = f"https://finnhub.io/api/v1/stock/financials-reported?symbol={ticker}&token={self.finnhub_api_key}"
-                response = requests.get(url)
-                response.raise_for_status()
-                data = response.json()
-                if data.get("data"):
-                    financials = [
-                        {
-                            "period": report.get("period", "N/A"),
-                            "year": report.get("year", None),
-                            "quarter": report.get("quarter", None),
-                            "revenue": report.get("financials", {}).get("income_statement", {}).get("revenue", None),
-                            "netIncome": report.get("financials", {}).get("income_statement", {}).get("net_income", None),
-                            "eps": report.get("financials", {}).get("income_statement", {}).get("eps", None)
-                        }
-                        for report in data["data"][:4]  # Last 4 quarters
-                    ]
-                    self.cache[cache_key] = financials
-                    logger.info(f"Fetched {len(financials)} financial reports for {ticker}")
-                    return financials
-                return f"No financials as reported available for {ticker}."
-            except requests.exceptions.HTTPError as e:
-                if response.status_code == 403:
-                    logger.error(f"Financials reported fetch failed: Invalid or restricted Finnhub API key for {ticker}")
-                    return f"Invalid or restricted Finnhub API key for {ticker}."
-                logger.error(f"Financials reported fetch attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
+                stock = yf.Ticker(ticker)
+                eps_trend = getattr(stock, 'get_eps_trend', lambda: None)()
+                eps_revision = getattr(stock, 'get_eps_revision', lambda: None)()
+                if eps_trend is None and eps_revision is None:
+                    logger.warning(f"No EPS data found for {ticker}")
+                    return f"No EPS data available for {ticker}."
+                formatted_data = {
+                    "eps_trend": (eps_trend.to_dict() if hasattr(eps_trend, 'empty') and not eps_trend.empty else {}) if eps_trend is not None else {},
+                    "eps_revision": (eps_revision.to_dict() if hasattr(eps_revision, 'empty') and not eps_revision.empty else {}) if eps_revision is not None else {}
+                }
+                self.cache[cache_key] = formatted_data
+                logger.info(f"Fetched EPS data for {ticker}")
+                return formatted_data
             except Exception as e:
-                logger.error(f"Financials reported fetch attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"Attempt {attempt + 1} failed fetching EPS data for {ticker}: {str(e)}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
-        logger.error(f"No financials as reported available for {ticker}")
-        return f"No financials as reported available for {ticker}."
+        logger.error(f"No EPS data available for {ticker}")
+        return f"No EPS data available for {ticker}."
 
-    def fetch_company_news(self, ticker, retries=3):
-        """Fetch company news from Finnhub's /company-news."""
-        logger.info(f"Fetching company news for {ticker} from Finnhub")
-        cache_key = f"news_{ticker}"
+    def fetch_analyst_recommendations(self, ticker, retries=3):
+        """Fetch analyst price targets and recommendations from yfinance."""
+        logger.info(f"Fetching analyst recommendations for {ticker} from yfinance")
+        cache_key = f"analyst_recommendations_{ticker}"
         if cache_key in self.cache:
-            logger.info(f"Returning cached news for {ticker}")
+            logger.info(f"Returning cached analyst recommendations for {ticker}")
             return self.cache[cache_key]
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
         for attempt in range(retries):
             try:
-                url = (
-                    f"https://finnhub.io/api/v1/company-news?symbol={ticker}"
-                    f"&from={start_date.strftime('%Y-%m-%d')}&to={end_date.strftime('%Y-%m-%d')}"
-                    f"&token={self.finnhub_api_key}"
-                )
-                response = requests.get(url)
-                response.raise_for_status()
-                articles = response.json()
-                if not articles:
-                    logger.info(f"No news articles found for {ticker}")
-                    return f"No recent news found for {ticker}."
-                news = [
-                    {
-                        "headline": article.get("headline", "No headline"),
-                        "source": article.get("source", "Unknown source"),
-                        "datetime": datetime.fromtimestamp(article.get("datetime", 0)).strftime('%Y-%m-%d %H:%M:%S'),
-                        "summary": article.get("summary", "No summary"),
-                        "url": article.get("url", "#")
-                    }
-                    for article in articles[:5]
-                ]
-                self.cache[cache_key] = news
-                logger.info(f"Fetched {len(news)} news articles for {ticker}")
-                return news
-            except requests.exceptions.HTTPError as e:
-                if response.status_code == 403:
-                    logger.error(f"News fetch failed: Invalid or restricted Finnhub API key for {ticker}")
-                    return f"Invalid or restricted Finnhub API key for {ticker}."
-                logger.error(f"News fetch attempt {attempt + 1} failed: {str(e)}")
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
+                stock = yf.Ticker(ticker)
+                price_targets = stock.get_analyst_price_targets()
+                if not price_targets:
+                    logger.warning(f"No analyst recommendations found for {ticker}")
+                    return f"No analyst recommendations available for {ticker}."
+                formatted_data = {
+                    "mean_price_target": price_targets.get("mean", None),
+                    "high_price_target": price_targets.get("high", None),
+                    "low_price_target": price_targets.get("low", None),
+                    "number_of_analysts": price_targets.get("numberOfAnalystOpinions", None)
+                }
+                self.cache[cache_key] = formatted_data
+                logger.info(f"Fetched analyst recommendations for {ticker}")
+                return formatted_data
             except Exception as e:
-                logger.error(f"News fetch attempt {attempt + 1} failed: {str(e)}")
+                logger.error(f"Attempt {attempt + 1} failed fetching analyst recommendations for {ticker}: {str(e)}")
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
-        logger.error(f"Error fetching news for {ticker} after {retries} attempts")
-        return f"Error fetching news for {ticker} after {retries} attempts."
+        logger.error(f"No analyst recommendations available for {ticker}")
+        return f"No analyst recommendations available for {ticker}."
 
     def calculate_technicals(self, prices):
         """Calculate technical indicators (SMA20, RSI) from price data."""
@@ -277,16 +207,27 @@ class StockAnalyzerAgent:
         rs = avg_gain / avg_loss if avg_loss != 0 else 0
         return 100 - (100 / (1 + rs))
 
-    def calculate_confidence(self, prices):
-        """Calculate confidence score based on price volatility."""
+    def calculate_confidence(self, prices, analyst_recommendations):
+        """Calculate confidence score based on price volatility and analyst coverage."""
         if not prices or isinstance(prices, str):
             return 0.0
         closes = [p["close"] for p in prices]
-        volatility = np.std(closes) / np.mean(closes)
-        return max(0.0, round(1.0 - volatility, 2))
+        volatility = np.std(closes) / np.mean(closes) if closes else 0.0
+        volatility_score = max(0.0, 1.0 - volatility)
+        if isinstance(analyst_recommendations, str):
+            num_analysts = 0
+        else:
+            # Handle None safely
+            num_analysts = analyst_recommendations.get("number_of_analysts") or 0
+            try:
+                num_analysts = int(num_analysts)
+            except Exception:
+                num_analysts = 0
+        analyst_score = 0.5 if num_analysts > 0 else 0.0
+        return round(0.7 * volatility_score + 0.3 * analyst_score, 2)
 
     def analyze_stock(self, ticker, market_context, retries=3):
-        """Analyze stock using combined data."""
+        """Analyze stock using combined yfinance data."""
         logger.info(f"Analyzing stock {ticker}")
         cache_key = f"stock_{ticker}"
         if cache_key in self.cache:
@@ -294,15 +235,46 @@ class StockAnalyzerAgent:
             return self.cache[cache_key]
 
         prices = self.fetch_stock_prices(ticker, retries)
-        fundamentals = self.fetch_fundamentals(ticker, retries)
+        income_stmt = self.fetch_income_statement(ticker, retries)
+        cash_flow = self.fetch_cash_flow(ticker, retries)
+        eps_data = self.fetch_eps_data(ticker, retries)
+        analyst_recommendations = self.fetch_analyst_recommendations(ticker, retries)
         technicals = self.calculate_technicals(prices)
 
         prompt = f"Analyze the stock {ticker} for investment potential based on:\n"
         if not isinstance(prices, str):
             prompt += f"- 30-day closing prices: {[p['close'] for p in prices[-10:]]} (latest: {prices[-1]['close']})\n"
             prompt += f"- Technical indicators: SMA20={technicals.get('sma20', 0.0):.2f}, RSI={technicals.get('rsi', 0.0):.2f}\n"
-        if not isinstance(fundamentals, str):
-            prompt += f"- Fundamentals: Market Cap={fundamentals.get('marketCapitalization', 'N/A')}M, P/E={fundamentals.get('peTTM', 'N/A')}\n"
+        if not isinstance(income_stmt, str):
+            latest_quarter = max(income_stmt["total_revenue"].keys(), default=None) if income_stmt["total_revenue"] else None
+            if latest_quarter:
+                prompt += (
+                    f"- Income Statement (latest quarter {latest_quarter}):\n"
+                    f"  - Total Revenue: {income_stmt['total_revenue'].get(latest_quarter, 'N/A')}\n"
+                    f"  - Net Income: {income_stmt['net_income'].get(latest_quarter, 'N/A')}\n"
+                    f"  - Operating Income: {income_stmt['operating_income'].get(latest_quarter, 'N/A')}\n"
+                )
+        if not isinstance(cash_flow, str):
+            latest_quarter = max(cash_flow["operating_cash_flow"].keys(), default=None) if cash_flow["operating_cash_flow"] else None
+            if latest_quarter:
+                prompt += (
+                    f"- Cash Flow (latest quarter {latest_quarter}):\n"
+                    f"  - Operating Cash Flow: {cash_flow['operating_cash_flow'].get(latest_quarter, 'N/A')}\n"
+                    f"  - Free Cash empujar: {cash_flow['free_cash_flow'].get(latest_quarter, 'N/A')}\n"
+                )
+        if not isinstance(eps_data, str):
+            prompt += (
+                f"- EPS Data:\n"
+                f"  - Current Quarter EPS Estimate: {eps_data['eps_trend'].get('currentQuarter', {}).get('epsEstimate', 'N/A')}\n"
+                f"  - EPS Revision (Up/Down): {eps_data['eps_revision'].get('currentQuarter', {}).get('numberOfAnalystsRevisedUp', 0)} up, "
+                f"{eps_data['eps_revision'].get('currentQuarter', {}).get('numberOfAnalystsRevisedDown', 0)} down\n"
+            )
+        if not isinstance(analyst_recommendations, str):
+            prompt += (
+                f"- Analyst Recommendations:\n"
+                f"  - Mean Price Target: {analyst_recommendations.get('mean_price_target', 'N/A')}\n"
+                f"  - Number of Analysts: {analyst_recommendations.get('number_of_analysts', 'N/A')}\n"
+            )
         prompt += f"- Market context: {market_context[:500]}\n"
         prompt += "Provide a concise analysis (150-200 words) covering trends, risks, opportunities, and an investment recommendation."
 
@@ -310,16 +282,19 @@ class StockAnalyzerAgent:
             try:
                 response = self.groq_client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
-                    model="llama3-70b-8192",
+                    model="llama-3.3-70b-versatile",
                     max_tokens=250
                 )
                 analysis = response.choices[0].message.content
-                confidence = self.calculate_confidence(prices)
+                confidence = self.calculate_confidence(prices, analyst_recommendations)
                 result = {
                     "analysis": analysis,
                     "confidence": confidence,
-                    "prices": [p["close"] for p in prices] if not isinstance(prices, str) else [],
-                    "fundamentals": fundamentals if not isinstance(fundamentals, str) else {},
+                    "prices": prices if not isinstance(prices, str) else [],
+                    "income_statement": income_stmt if not isinstance(income_stmt, str) else {},
+                    "cash_flow": cash_flow if not isinstance(cash_flow, str) else {},
+                    "eps_data": eps_data if not isinstance(eps_data, str) else {},
+                    "analyst_recommendations": analyst_recommendations if not isinstance(analyst_recommendations, str) else {},
                     "technicals": technicals
                 }
                 self.cache[cache_key] = result
@@ -330,19 +305,24 @@ class StockAnalyzerAgent:
                 if attempt < retries - 1:
                     time.sleep(2 ** attempt)
 
-        error_msg = "Error generating analysis. Based on market context only."
+        # Fallback: preserve fetched data even if LLM call failed
+        error_msg = "Error generating analysis. Based on available data."
+        confidence = self.calculate_confidence(prices if not isinstance(prices, str) else [], analyst_recommendations if not isinstance(analyst_recommendations, str) else {})
         result = {
             "analysis": error_msg + f"\nMarket context: {market_context[:200]}",
-            "confidence": 0.0,
-            "prices": [],
-            "fundamentals": {},
+            "confidence": confidence,
+            "prices": prices if not isinstance(prices, str) else [],
+            "income_statement": income_stmt if not isinstance(income_stmt, str) else {},
+            "cash_flow": cash_flow if not isinstance(cash_flow, str) else {},
+            "eps_data": eps_data if not isinstance(eps_data, str) else {},
+            "analyst_recommendations": analyst_recommendations if not isinstance(analyst_recommendations, str) else {},
             "technicals": technicals
         }
         self.cache[cache_key] = result
         return result
 
     def fetch_all_data(self, ticker, retries=3):
-        """Fetch all data (prices, fundamentals, technicals, basic financials, financials reported, news) and return as JSON."""
+        """Fetch all data (prices, income statement, cash flow, EPS data, analyst recommendations, technicals) and return as JSON."""
         logger.info(f"Fetching all data for {ticker}")
         cache_key = f"all_data_{ticker}"
         if cache_key in self.cache:
@@ -350,20 +330,20 @@ class StockAnalyzerAgent:
             return self.cache[cache_key]
 
         prices = self.fetch_stock_prices(ticker, retries)
-        fundamentals = self.fetch_fundamentals(ticker, retries)
+        income_stmt = self.fetch_income_statement(ticker, retries)
+        cash_flow = self.fetch_cash_flow(ticker, retries)
+        eps_data = self.fetch_eps_data(ticker, retries)
+        analyst_recommendations = self.fetch_analyst_recommendations(ticker, retries)
         technicals = self.calculate_technicals(prices)
-        basic_financials = self.fetch_basic_financials(ticker, retries)
-        financials_reported = self.fetch_financials_reported(ticker, retries)
-        company_news = self.fetch_company_news(ticker, retries)
 
         result = {
             "ticker": ticker,
             "historical_prices": prices if not isinstance(prices, str) else [],
-            "fundamentals": fundamentals if not isinstance(fundamentals, str) else {},
+            "income_statement": income_stmt if not isinstance(income_stmt, str) else {},
+            "cash_flow": cash_flow if not isinstance(cash_flow, str) else {},
+            "eps_data": eps_data if not isinstance(eps_data, str) else {},
+            "analyst_recommendations": analyst_recommendations if not isinstance(analyst_recommendations, str) else {},
             "technicals": technicals,
-            "basic_financials": basic_financials if not isinstance(basic_financials, str) else {},
-            "financials_reported": financials_reported if not isinstance(financials_reported, str) else [],
-            "company_news": company_news if not isinstance(company_news, str) else [],
             "timestamp": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             "errors": []
         }
@@ -371,14 +351,14 @@ class StockAnalyzerAgent:
         # Collect errors
         if isinstance(prices, str):
             result["errors"].append(prices)
-        if isinstance(fundamentals, str):
-            result["errors"].append(fundamentals)
-        if isinstance(basic_financials, str):
-            result["errors"].append(basic_financials)
-        if isinstance(financials_reported, str):
-            result["errors"].append(financials_reported)
-        if isinstance(company_news, str):
-            result["errors"].append(company_news)
+        if isinstance(income_stmt, str):
+            result["errors"].append(income_stmt)
+        if isinstance(cash_flow, str):
+            result["errors"].append(cash_flow)
+        if isinstance(eps_data, str):
+            result["errors"].append(eps_data)
+        if isinstance(analyst_recommendations, str):
+            result["errors"].append(analyst_recommendations)
 
         self.cache[cache_key] = result
         logger.info(f"Fetched all data for {ticker}")

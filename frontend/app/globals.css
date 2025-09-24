@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom theme colors (using Tailwind config colors) */
+:root {
+  --color-primary: #CA763A;
+  --color-secondary: #134B42;
+  --color-white: #fff;
+  --color-black: #000;
+}
+
+body {
+  background-color: var(--color-white);
+  color: #0a0a0a;
+}
+
+.dark body { background-color: #134B42; color: #f5f7f9; }
+
+@layer utilities {
+  a {
+    @apply text-primary hover:underline;
+  }
+  .dark a {
+    @apply text-white hover:underline;
+  }
+}
+
+/* Shared UI helpers */
+.card { @apply rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-secondary/60 shadow-sm; }
+.btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-white hover:opacity-90 transition; }
+.btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2 text-white hover:opacity-90 transition; }

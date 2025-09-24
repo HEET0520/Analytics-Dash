@@ -22,21 +22,25 @@ class HeadAgent:
             raise
 
     def is_valid_ticker(self, ticker):
-        return ticker.isalnum() and 1 <= len(ticker) <= 5
+        """Validate ticker, allowing for Indian stock suffixes like .NS or .BO."""
+        # Remove exchange suffix (e.g., .NS, .BO) and check base ticker
+        base_ticker = ticker.split('.')[0] if '.' in ticker else ticker
+        return base_ticker.isalnum() and 1 <= len(base_ticker) <= 10 and (ticker.endswith(('.NS', '.BO')) or len(ticker) == len(base_ticker))
 
     def analyze_stock(self, ticker):
         if not self.is_valid_ticker(ticker):
             logger.error(f"Invalid ticker: {ticker}")
-            return {"error": "Invalid ticker symbol. Use 1-5 alphanumeric characters."}
+            raise ValueError("Invalid ticker symbol. Use 1-10 alphanumeric characters, optionally with .NS or .BO suffix for Indian stocks.")
 
         logger.info(f"Starting analysis for {ticker}")
         try:
             market_context = self.market_context_agent.get_market_context(ticker)
             stock_result = self.stock_analyzer_agent.analyze_stock(ticker, market_context)
-            if "error" in stock_result.get("analysis", "").lower():
-                return {"error": stock_result["analysis"]}
+            if "error" in stock_result:
+                logger.error(f"Stock analysis failed for {ticker}: {stock_result['error']}")
+                return {"error": stock_result["error"]}
 
-            fundamentals_analysis = self.fin_analyzer_agent.analyze_fundamentals(ticker, stock_result.get("fundamentals", {}))
+            fundamentals_analysis = self.fin_analyzer_agent.analyze_fundamentals(ticker, stock_result.get("income_statement", {}))
             result = {
                 "ticker": ticker,
                 "timestamp": datetime.utcnow().isoformat(),
@@ -45,7 +49,7 @@ class HeadAgent:
                 "confidence": stock_result["confidence"],
                 "prices": stock_result["prices"],
                 "technicals": stock_result["technicals"],
-                "fundamentals": stock_result["fundamentals"],
+                "fundamentals": stock_result["income_statement"],
                 "fundamentals_analysis": fundamentals_analysis
             }
             self.save_analysis(result)
@@ -69,6 +73,6 @@ class HeadAgent:
 if __name__ == "__main__":
     import sys
     head_agent = HeadAgent()
-    ticker = input("Enter stock ticker (e.g., TSLA): ").strip().upper()
+    ticker = input("Enter stock ticker (e.g., TSLA, RELIANCE.NS): ").strip().upper()
     result = head_agent.analyze_stock(ticker)
     print(json.dumps(result, indent=2))
