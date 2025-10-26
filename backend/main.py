@@ -322,6 +322,8 @@ async def analyze_document_sync(file: UploadFile = File(...)):
         logger.error(f"Error in synchronous document analysis for {file.filename}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
 
+
+
 @app.get("/task/{task_id}", response_model=AnalysisStatus)
 async def get_task_status_endpoint(task_id: str):
     """

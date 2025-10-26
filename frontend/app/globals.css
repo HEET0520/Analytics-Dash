@@ -4,8 +4,8 @@
 
 /* Custom theme colors (using Tailwind config colors) */
 :root {
-  --color-primary: #CA763A;
-  --color-secondary: #134B42;
+  --color-primary: #807853;
+  --color-secondary: #312100ad;
   --color-white: #fff;
   --color-black: #000;
 }
@@ -15,7 +15,7 @@ body {
   color: #0a0a0a;
 }
 
-.dark body { background-color: #134B42; color: #f5f7f9; }
+.dark body { background-color: #312100ad; color: #f5f7f9; }
 
 @layer utilities {
   a {
