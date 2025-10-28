@@ -6,3 +6,5 @@ node_modules/
 frontend/node_modules/
 public/
 .next/
+backend/.venv311/
+backend/cache_dir/
