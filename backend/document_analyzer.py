@@ -23,8 +23,14 @@ from joblib import Memory
 from tabulate import tabulate
 
 # Suppress TensorFlow warnings
+os.environ["USE_TF"] = "0"
+os.environ["TRANSFORMERS_NO_TF"] = "1"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
+
+# Optional safety — makes HuggingFace import only PyTorch
+os.environ["DISABLE_MLFLOW_INTEGRATION"] = "1"
+os.environ["DISABLE_TF_INTEGRATION"] = "1"
 
 # Configure logging
 logging.basicConfig(
@@ -43,10 +49,10 @@ os.environ["TESSDATA_PREFIX"] = r"C:/Program Files/Tesseract-OCR/tessdata"
 logger.info("Tesseract configured")
 
 # Initialize models with ONNX backend for speed
-logger.info("Initializing SentenceTransformer model with ONNX backend...")
+logger.info("Initializing SentenceTransformer model ...")
 try:
-    model = SentenceTransformer('all-MiniLM-L6-v2', backend="onnx")
-    logger.info("SentenceTransformer ONNX model initialized successfully")
+    model = SentenceTransformer('all-MiniLM-L6-v2',device='cpu')
+    logger.info("SentenceTransformer model initialized successfully")
 except Exception as e:
     logger.warning(f"ONNX backend failed, falling back to PyTorch: {e}")
     model = SentenceTransformer('all-MiniLM-L6-v2')
