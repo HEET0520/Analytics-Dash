@@ -44,9 +44,19 @@ load_dotenv()
 logger.info("Environment variables loaded")
 
 # Configure Tesseract
-pytesseract.pytesseract.tesseract_cmd = r"C:/Program Files/Tesseract-OCR/tesseract.exe"
-os.environ["TESSDATA_PREFIX"] = r"C:/Program Files/Tesseract-OCR/tessdata"
-logger.info("Tesseract configured")
+ct platform and configure Tesseract
+if os.name == "nt":  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r"C:/Program Files/Tesseract-OCR/tesseract.exe"
+    os.environ["TESSDATA_PREFIX"] = r"C:/Program Files/Tesseract-OCR/tessdata"
+else:  # Linux (Render)
+    path = shutil.which("tesseract")
+    if path:
+        pytesseract.pytesseract.tesseract_cmd = path
+        os.environ["TESSDATA_PREFIX"] = "/usr/share/tesseract-ocr/4.00/tessdata"
+    else:
+        logging.error("⚠️ Tesseract binary not found in this environment!")
+
+logging.info(f"Tesseract configured at: {pytesseract.pytesseract.tesseract_cmd}")
 
 # Initialize models with ONNX backend for speed
 logger.info("Initializing SentenceTransformer model ...")
