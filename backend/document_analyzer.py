@@ -8,13 +8,12 @@ import pandas as pd
 import faiss
 import cv2
 import asyncio
-import concurrent.futures
 from io import BytesIO
 from PIL import Image
 from dotenv import load_dotenv
 import PyPDF2
-# import fitz  # pyright: ignore[reportMissingImports]
-import pytesseract
+import fitz # pymupdf - uncommented and required now
+import easyocr  # NEW: EasyOCR instead of pytesseract
 import google.generativeai as genai
 from fastapi import HTTPException
 from sentence_transformers import SentenceTransformer, CrossEncoder
@@ -43,25 +42,15 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 logger.info("Environment variables loaded")
 
-# Configure Tesseract
-ct platform and configure Tesseract
-if os.name == "nt":  # Windows
-    pytesseract.pytesseract.tesseract_cmd = r"C:/Program Files/Tesseract-OCR/tesseract.exe"
-    os.environ["TESSDATA_PREFIX"] = r"C:/Program Files/Tesseract-OCR/tessdata"
-else:  # Linux (Render)
-    path = shutil.which("tesseract")
-    if path:
-        pytesseract.pytesseract.tesseract_cmd = path
-        os.environ["TESSDATA_PREFIX"] = "/usr/share/tesseract-ocr/4.00/tessdata"
-    else:
-        logging.error("⚠️ Tesseract binary not found in this environment!")
-
-logging.info(f"Tesseract configured at: {pytesseract.pytesseract.tesseract_cmd}")
+# Initialize EasyOCR reader (once, globally)
+logger.info("Initializing EasyOCR reader...")
+easyocr_reader = easyocr.Reader(['en'], gpu=False)  # Add more languages if needed: ['en', 'es', ...]
+logger.info("EasyOCR reader initialized successfully")
 
 # Initialize models with ONNX backend for speed
 logger.info("Initializing SentenceTransformer model ...")
 try:
-    model = SentenceTransformer('all-MiniLM-L6-v2',device='cpu')
+    model = SentenceTransformer('all-MiniLM-L6-v2', device='cpu')
     logger.info("SentenceTransformer model initialized successfully")
 except Exception as e:
     logger.warning(f"ONNX backend failed, falling back to PyTorch: {e}")
@@ -83,11 +72,12 @@ if not gemini_api_key:
     logger.error("GEMINI_API_KEY not found in .env file")
     raise ValueError("GEMINI_API_KEY not found in .env file")
 genai.configure(api_key=gemini_api_key)
-gemini_model = genai.GenerativeModel("gemini-2.5-flash")
+gemini_model = genai.GenerativeModel("gemini-2.5-flash")  # Updated to latest stable
 logger.info("Gemini client initialized successfully")
 
 # Task storage
 task_results = {}
+
 
 def extract_text_from_pdf(pdf_file_bytes):
     logger.info("Starting PDF text extraction")
@@ -106,6 +96,7 @@ def extract_text_from_pdf(pdf_file_bytes):
     except Exception as e:
         logger.error(f"Error extracting text from PDF: {str(e)}", exc_info=True)
         raise
+
 
 def extract_images_from_pdf(pdf_file_bytes):
     logger.info("Starting PDF image extraction")
@@ -130,20 +121,29 @@ def extract_images_from_pdf(pdf_file_bytes):
         logger.error(f"Error extracting images from PDF: {str(e)}", exc_info=True)
     return images
 
+
 def extract_text_from_image(image):
-    logger.debug("Starting OCR text extraction from image")
+    """
+    Extract text from image using EasyOCR.
+    image: numpy array in BGR format (from OpenCV)
+    """
+    logger.debug("Starting OCR text extraction with EasyOCR")
     try:
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)
-        extracted_text = pytesseract.image_to_string(thresh)
-        return extracted_text.strip()
+        # Convert BGR (OpenCV) → RGB (EasyOCR)
+        rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        # detail=0 returns only text strings
+        result = easyocr_reader.readtext(rgb_image, detail=0, paragraph=True)
+        text = " ".join(result).strip()
+        return text
     except Exception as e:
-        logger.error(f"Error extracting text from image: {str(e)}", exc_info=True)
+        logger.error(f"EasyOCR extraction error: {str(e)}", exc_info=True)
         return ""
+
 
 async def async_extract_text_from_image(image):
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, extract_text_from_image, image)
+
 
 async def process_graphs(images):
     logger.info(f"Starting graph processing for {len(images)} images")
@@ -155,6 +155,7 @@ async def process_graphs(images):
     logger.info(f"Graph processing completed. Extracted {len(combined_text)} characters")
     return combined_text
 
+
 def _ensure_str(s):
     """Return s if it's a str, otherwise return empty string."""
     if s is None:
@@ -164,6 +165,7 @@ def _ensure_str(s):
     if isinstance(s, str):
         return s
     return str(s)
+
 
 def simple_semantic_chunking(text, chunk_size=600):
     """
@@ -193,6 +195,7 @@ def simple_semantic_chunking(text, chunk_size=600):
     
     logger.info(f"Simple chunking completed. Created {len(chunks)} chunks")
     return chunks
+
 
 async def create_vector_db(text, chunk_size=600):
     logger.info(f"Creating vector DB with chunk_size={chunk_size}")
@@ -231,6 +234,7 @@ async def create_vector_db(text, chunk_size=600):
     logger.info(f"FAISS index saved to temporary file: {temp_file.name}")
     
     return temp_file.name, chunks, bm25
+
 
 def search_vector_db(query, index, chunks, bm25, k=5):
     logger.info(f"Searching vector DB for query: '{query}' with k={k}")
@@ -272,6 +276,7 @@ def search_vector_db(query, index, chunks, bm25, k=5):
     logger.info(f"Search completed, returning {len(result)} characters")
     return result
 
+
 @memory.cache
 def cached_generate_content(prompt):
     logger.info("Calling Gemini API (cached_generate_content)")
@@ -287,6 +292,7 @@ def cached_generate_content(prompt):
     except Exception as e:
         logger.error(f"Error in cached_generate_content: {str(e)}", exc_info=True)
         raise
+
 
 async def process_question(args):
     question, index, chunks, bm25 = args
@@ -312,6 +318,7 @@ async def process_question(args):
     except Exception as e:
         logger.error(f"Failed for question '{question}': {str(e)}", exc_info=True)
         return f"### {question}\nError: Unable to process the question: {str(e)}"
+
 
 def extract_financial_metrics_table(text):
     logger.info("Extracting financial metrics table")
@@ -372,6 +379,7 @@ def extract_financial_metrics_table(text):
         logger.error(f"Metrics extraction failed: {str(e)}", exc_info=True)
         return f"Error extracting metrics: {str(e)}", {}
 
+
 def generate_buy_sell_recommendation(text, metrics_data):
     logger.info("Generating buy/sell recommendation")
     
@@ -388,13 +396,13 @@ def generate_buy_sell_recommendation(text, metrics_data):
     CONFIDENCE: [1-10]
     
     JUSTIFICATION:
-    • [Point 1]
-    • [Point 2]
-    • [Point 3]
+    - [Point 1]
+    - [Point 2]
+    - [Point 3]
     
     KEY RISKS:
-    • [Risk 1]
-    • [Risk 2]
+    - [Risk 1]
+    - [Risk 2]
     
     If no recommendation can be made, return "Unable to generate recommendation due to insufficient data."
     """
@@ -414,6 +422,7 @@ def generate_buy_sell_recommendation(text, metrics_data):
     except Exception as e:
         logger.error(f"Recommendation generation failed: {str(e)}", exc_info=True)
         return f"Error generating recommendation: {str(e)}"
+
 
 async def analyze_report(text, graph_text=None):
     logger.info("="*80)
@@ -478,6 +487,7 @@ async def analyze_report(text, graph_text=None):
     
     return analysis_result, metrics_table, recommendation, processing_time
 
+
 async def process_document_task(task_id: str, file_bytes: bytes, file_extension: str):
     logger.info("="*80)
     logger.info(f"Starting document processing task: {task_id}")
@@ -540,6 +550,7 @@ async def process_document_task(task_id: str, file_bytes: bytes, file_extension:
             "error": str(e),
             "error_type": type(e).__name__
         }
+
 
 def get_task_status(task_id: str):
     logger.info(f"Getting status for task: {task_id}")

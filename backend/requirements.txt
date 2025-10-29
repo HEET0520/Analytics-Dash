@@ -9,7 +9,7 @@ PyPDF2
 sentence-transformers 
 faiss-cpu
 opencv-python 
-pytesseract 
+easyocr
 PyMuPDF
 Pillow
 python-dotenv
