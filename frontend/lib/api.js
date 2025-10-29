@@ -5,7 +5,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 20000,
+  timeout: 360000, // Increased for document analysis
   headers: {
     'Accept': 'application/json',
   },
@@ -34,13 +34,15 @@ const post = async (url, data, config = {}) => {
 };
 
 // --- API functions ---
-export const analyzeSyncDocument = async (file) => {
+export const analyzeSyncDocument = async (file, onProgress) => {
   const formData = new FormData();
   formData.append('file', file);
 
   return post('/analyze_sync/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
     maxBodyLength: 10 * 1024 * 1024, // 10MB
+    timeout: 600000, // 10 minutes for large documents (10-12 pages)
+    onUploadProgress: onProgress,
   });
 };
 

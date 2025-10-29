@@ -18,19 +18,19 @@ export default function Home() {
         animate="animate"
         transition={{ duration: 0.5 }}
       >
-        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-secondary dark:text-white leading-tight">
+        <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight leading-tight bg-gradient-to-r from-brandStart via-brandMid to-brandEnd bg-clip-text text-transparent">
           AI-Powered Financial Insights at Your Fingertips
         </h1>
         <p className="mt-6 text-xl md:text-2xl text-neutral-600 dark:text-neutral-400 max-w-4xl mx-auto">
           Transform your investment strategy with real-time analysis, comprehensive stock data, and advanced document intelligence.
         </p>
         <div className="mt-12 flex items-center justify-center gap-4">
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }}>
             <Link href="/dashboard" className="btn-primary">
               <span className="text-lg">Open Dashboard</span>
             </Link>
           </motion.div>
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <motion.div whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.98 }}>
             <Link href="/document-analysis" className="btn-secondary">
               <span className="text-lg">Analyze Documents</span>
             </Link>
@@ -59,7 +59,7 @@ export default function Home() {
           ].map((f, index) => (
             <motion.div
               key={f.title}
-              className="card p-8 space-y-4"
+              className="card p-8 space-y-4 animate-in"
               variants={fadeIn}
               initial="initial"
               animate="animate"

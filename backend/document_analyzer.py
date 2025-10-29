@@ -13,7 +13,7 @@ from io import BytesIO
 from PIL import Image
 from dotenv import load_dotenv
 import PyPDF2
-import fitz
+# import fitz  # pyright: ignore[reportMissingImports]
 import pytesseract
 import google.generativeai as genai
 from fastapi import HTTPException

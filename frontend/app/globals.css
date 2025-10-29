@@ -2,31 +2,41 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Custom theme colors (using Tailwind config colors) */
+/* Custom theme colors (modern palette) */
 :root {
-  --color-primary: #807853;
-  --color-secondary: #312100ad;
-  --color-white: #fff;
-  --color-black: #000;
+  --color-primary: #0ea5e9; /* sky-500 */
+  --color-secondary: #0b1220; /* deep slate */
+  --color-surface: #0f172a; /* slate-900 */
+  --color-muted: #94a3b8; /* slate-400 */
+  --color-white: #ffffff;
+  --color-black: #000000;
 }
 
-body {
-  background-color: var(--color-white);
-  color: #0a0a0a;
-}
-
-.dark body { background-color: #312100ad; color: #f5f7f9; }
+body { background-color: var(--color-white); color: #0a0a0a; }
+.dark body { background-color: var(--color-secondary); color: #e5e7eb; }
 
 @layer utilities {
-  a {
-    @apply text-primary hover:underline;
-  }
-  .dark a {
-    @apply text-white hover:underline;
-  }
+  a { @apply text-primary hover:underline; }
+  .dark a { @apply text-white hover:underline; }
 }
 
 /* Shared UI helpers */
-.card { @apply rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-secondary/60 shadow-sm; }
-.btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-white hover:opacity-90 transition; }
-.btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2 text-white hover:opacity-90 transition; }
+.card { @apply rounded-2xl border border-black/10 dark:border-white/10 bg-white dark:bg-surface shadow-md backdrop-blur-sm overflow-hidden transition-transform duration-200; }
+.card:hover { @apply translate-y-[1px]; }
+.btn-primary { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-brandStart via-brandMid to-brandEnd px-5 py-2.5 text-white shadow-glow hover:brightness-110 active:brightness-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brandMid/40; }
+.btn-secondary { @apply inline-flex items-center justify-center gap-2 rounded-xl bg-neutral-900 px-5 py-2.5 text-white shadow-sm hover:opacity-90 active:opacity-100 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brandMid/40 dark:bg-surface; }
+
+/* Inputs */
+.input { @apply w-full rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-surface px-3.5 py-2.5 placeholder:text-neutral-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-brandMid/30; }
+
+/* Subtle separators */
+.divider { @apply border-t border-black/10 dark:border-white/10; }
+
+/* Shimmer loader */
+.shimmer { background: linear-gradient(90deg, rgba(0,0,0,0.06) 25%, rgba(0,0,0,0.12) 37%, rgba(0,0,0,0.06) 63%); background-size: 700px 100%; }
+.dark .shimmer { background: linear-gradient(90deg, rgba(255,255,255,0.06) 25%, rgba(255,255,255,0.14) 37%, rgba(255,255,255,0.06) 63%); background-size: 700px 100%; }
+.animate-shimmer { animation: shimmer 1.6s infinite linear; }
+
+/* Spinner */
+.spinner { @apply inline-block h-5 w-5 rounded-full border-2 border-white/30 border-t-white; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
